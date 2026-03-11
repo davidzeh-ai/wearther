@@ -41,7 +41,32 @@ const chipStyle = (active) => ({
   whiteSpace: "nowrap",
 });
 
-async function fetchRecommendation({ locationInput, heatTolerance, style, exposureIndex, feedbackHistory }) {
+const WEATHER_EMOJI = {
+  Thunderstorm: "⛈️", Drizzle: "🌦️", Rain: "🌧️", Snow: "❄️",
+  Mist: "🌫️", Smoke: "🌫️", Haze: "🌫️", Dust: "🌫️", Fog: "🌫️",
+  Sand: "🌫️", Ash: "🌫️", Squall: "🌬️", Tornado: "🌪️",
+  Clear: "☀️", Clouds: "☁️",
+};
+
+async function fetchWeather(locationInput) {
+  const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
+  const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(locationInput)}&appid=${apiKey}&units=imperial`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Could not find that location in weather database. Try a major nearby city.");
+  const data = await res.json();
+  return {
+    tempF: Math.round(data.main.temp),
+    feelsLikeF: Math.round(data.main.feels_like),
+    conditions: data.weather[0].description.charAt(0).toUpperCase() + data.weather[0].description.slice(1),
+    emoji: WEATHER_EMOJI[data.weather[0].main] || "🌡️",
+    windMph: Math.round(data.wind.speed),
+    humidity: data.main.humidity,
+    uvIndex: "—",
+    locationDisplay: `${data.name}, ${data.sys.country}`,
+  };
+}
+
+async function fetchRecommendation({ weather, heatTolerance, style, exposureIndex, feedbackHistory }) {
   const historyNote = feedbackHistory.length > 0
     ? `Past outfit feedback: ${feedbackHistory.map(h => `felt ${h.feeling} (${h.style} style, exposure: ${EXPOSURE_LABELS[h.exposureIndex]})`).join("; ")}.`
     : "";
@@ -53,9 +78,14 @@ async function fetchRecommendation({ locationInput, heatTolerance, style, exposu
   const styleObj = STYLES.find(s => s.id === style);
   const exposureLabel = EXPOSURE_LABELS[exposureIndex];
 
-  const prompt = `Today is ${today}. The user is in "${locationInput}".
+  const prompt = `Today is ${today}.
 
-Using your knowledge of typical weather for this location and season, estimate realistic current conditions and give a specific outfit recommendation.
+Current weather conditions:
+- Temperature: ${weather.tempF}°F (feels like ${weather.feelsLikeF}°F)
+- Conditions: ${weather.conditions}
+- Wind: ${weather.windMph} mph
+- Humidity: ${weather.humidity}%
+- Location: ${weather.locationDisplay}
 
 User profile:
 - Temperature tolerance: ${heatTolerance === "cold" ? "runs cold, tends to feel chilly" : heatTolerance === "hot" ? "runs warm, tends to overheat" : "average temperature sensitivity"}
@@ -66,7 +96,7 @@ ${historyNote}
 The outdoor exposure time should significantly affect layering and practicality advice. Someone barely outside needs comfort; someone outside most of the day needs durability and weather protection.
 
 Respond ONLY with a raw JSON object. No markdown. No backticks. No explanation. Just valid JSON:
-{"locationDisplay":"New York, NY","tempF":48,"feelsLikeF":43,"conditions":"Overcast with wind","emoji":"☁️","windMph":16,"humidity":62,"uvIndex":1,"headline":"A sharp layered look that handles the cold without bulk","layers":["Thermal base layer under a fitted crewneck","Dark slim chinos","Structured wool overcoat"],"keyAdvice":"Wind makes it feel 5 degrees colder than it is — the coat earns its place today.","watchOut":"Rain possible after 3pm — consider a coat with some water resistance."}`;
+{"headline":"A sharp layered look that handles the cold without bulk","layers":["Thermal base layer under a fitted crewneck","Dark slim chinos","Structured wool overcoat"],"keyAdvice":"Wind makes it feel 5 degrees colder than it is — the coat earns its place today.","watchOut":"Rain possible after 3pm — consider a coat with some water resistance."}`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -100,13 +130,11 @@ export default function Wearther() {
     name: "", locationInput: "", heatTolerance: "average",
   });
 
-  // Recommendation screen state
   const [activeStyle, setActiveStyle] = useState("casual");
-  const [exposureIndex, setExposureIndex] = useState(1); // default: "Short bursts"
-  const [weatherData, setWeatherData] = useState(null);
+  const [exposureIndex, setExposureIndex] = useState(1);
+  const [weather, setWeather] = useState(null);
   const [rec, setRec] = useState(null);
   const [recLoading, setRecLoading] = useState(false);
-
   const [feedback, setFeedback] = useState(null);
   const [feedbackHistory, setFeedbackHistory] = useState([]);
   const [error, setError] = useState(null);
@@ -122,34 +150,14 @@ export default function Wearther() {
       async (pos) => {
         try {
           const { latitude, longitude } = pos.coords;
-          // Use Claude API to reverse geocode — no external API needed
-          const geoRes = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: {
-      "Content-Type": "application/json",
-      "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 50,
-              messages: [{
-                role: "user",
-                content: `What city and state/country is nearest to coordinates ${latitude.toFixed(3)}, ${longitude.toFixed(3)}? Reply with ONLY the city and state/country, e.g. "Forest Hills, NY" or "London, UK". Nothing else.`
-              }]
-            })
-          });
-          const geoData = await geoRes.json();
-          const cityName = geoData.content?.[0]?.text?.trim();
-          if (cityName) {
-            setProfile(p => ({ ...p, locationInput: p.locationInput || cityName }));
-            setLocationDetected(true);
-          } else {
-            // Fallback to coords
-            setProfile(p => ({ ...p, locationInput: p.locationInput || `${latitude.toFixed(3)}, ${longitude.toFixed(3)}` }));
-            setLocationDetected(true);
-          }
+          const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
+          const res = await fetch(
+            `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}`
+          );
+          const data = await res.json();
+          const cityName = `${data.name}, ${data.sys.country}`;
+          setProfile(p => ({ ...p, locationInput: p.locationInput || cityName }));
+          setLocationDetected(true);
         } catch {}
         finally { setLocationLoading(false); }
       },
@@ -158,39 +166,21 @@ export default function Wearther() {
     );
   }, []);
 
-  const loadRecommendation = useCallback(async ({ style, exposure, history }) => {
-    setRecLoading(true);
-    try {
-      const result = await fetchRecommendation({
-        locationInput: profile.locationInput,
-        heatTolerance: profile.heatTolerance,
-        style,
-        exposureIndex: exposure,
-        feedbackHistory: history,
-      });
-      setWeatherData(result);
-      setRec(result);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setRecLoading(false);
-    }
-  }, [profile]);
-
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setStep("loading");
     setError(null);
     try {
-      const result = await fetchRecommendation({
-        locationInput: profile.locationInput,
+      const weatherData = await fetchWeather(profile.locationInput);
+      setWeather(weatherData);
+      const recData = await fetchRecommendation({
+        weather: weatherData,
         heatTolerance: profile.heatTolerance,
         style: activeStyle,
         exposureIndex,
         feedbackHistory,
       });
-      setWeatherData(result);
-      setRec(result);
+      setRec({ ...weatherData, ...recData });
       setStep("recommendation");
     } catch (e) {
       setError(e.message);
@@ -202,14 +192,14 @@ export default function Wearther() {
     setActiveStyle(newStyle);
     setRecLoading(true);
     try {
-      const result = await fetchRecommendation({
-        locationInput: profile.locationInput,
+      const recData = await fetchRecommendation({
+        weather,
         heatTolerance: profile.heatTolerance,
         style: newStyle,
         exposureIndex,
         feedbackHistory,
       });
-      setRec(result);
+      setRec(r => ({ ...r, ...recData }));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -221,14 +211,14 @@ export default function Wearther() {
     setExposureIndex(newIndex);
     setRecLoading(true);
     try {
-      const result = await fetchRecommendation({
-        locationInput: profile.locationInput,
+      const recData = await fetchRecommendation({
+        weather,
         heatTolerance: profile.heatTolerance,
         style: activeStyle,
         exposureIndex: newIndex,
         feedbackHistory,
       });
-      setRec(result);
+      setRec(r => ({ ...r, ...recData }));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -249,15 +239,16 @@ export default function Wearther() {
   const handleRefresh = async () => {
     setStep("loading");
     try {
-      const result = await fetchRecommendation({
-        locationInput: profile.locationInput,
+      const weatherData = await fetchWeather(profile.locationInput);
+      setWeather(weatherData);
+      const recData = await fetchRecommendation({
+        weather: weatherData,
         heatTolerance: profile.heatTolerance,
         style: activeStyle,
         exposureIndex,
         feedbackHistory,
       });
-      setWeatherData(result);
-      setRec(result);
+      setRec({ ...weatherData, ...recData });
       setFeedback(null);
       setStep("recommendation");
     } catch (e) {
@@ -280,7 +271,6 @@ export default function Wearther() {
         background: "radial-gradient(ellipse at 20% 20%, rgba(100,180,255,0.06) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(255,200,100,0.04) 0%, transparent 60%)",
       }} />
 
-      {/* Logo */}
       <div style={{ marginBottom: "28px", textAlign: "center" }}>
         <div style={{ fontSize: "11px", letterSpacing: "0.35em", color: "#6a9ab8", textTransform: "uppercase", marginBottom: "6px" }}>WEARTHER</div>
         <div style={{ width: "40px", height: "1px", background: "rgba(106,154,184,0.4)", margin: "0 auto" }} />
@@ -294,7 +284,6 @@ export default function Wearther() {
         backdropFilter: "blur(12px)",
       }}>
 
-        {/* ── PROFILE ── */}
         {step === "profile" && (
           <div>
             <h1 style={{ color: "#e8f4f8", fontSize: "20px", fontWeight: "normal", marginBottom: "6px", lineHeight: 1.4 }}>
@@ -320,19 +309,12 @@ export default function Wearther() {
             <div style={{ marginBottom: "18px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "10px" }}>
                 <label style={{ ...labelStyle, marginBottom: 0 }}>Where are you?</label>
-                {locationLoading && (
-                  <span style={{ color: "#3a5a6a", fontSize: "10px", fontStyle: "italic" }}>Detecting…</span>
-                )}
-                {locationDetected && !locationLoading && (
-                  <span style={{ color: "#4a9a6a", fontSize: "10px", fontStyle: "italic" }}>📍 Location detected — edit if needed</span>
-                )}
+                {locationLoading && <span style={{ color: "#3a5a6a", fontSize: "10px", fontStyle: "italic" }}>Detecting…</span>}
+                {locationDetected && !locationLoading && <span style={{ color: "#4a9a6a", fontSize: "10px", fontStyle: "italic" }}>📍 Detected — edit if needed</span>}
               </div>
               <input type="text" placeholder="e.g. Forest Hills, NY"
                 value={profile.locationInput}
-                onChange={e => {
-                  setLocationDetected(false);
-                  setProfile(p => ({ ...p, locationInput: e.target.value }));
-                }}
+                onChange={e => { setLocationDetected(false); setProfile(p => ({ ...p, locationInput: e.target.value })); }}
                 onKeyDown={e => e.key === "Enter" && handleSubmit()}
                 style={inputStyle} />
             </div>
@@ -361,7 +343,6 @@ export default function Wearther() {
           </div>
         )}
 
-        {/* ── LOADING ── */}
         {step === "loading" && (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
             <div style={{ fontSize: "40px", marginBottom: "16px", animation: "pulse 1.5s ease-in-out infinite" }}>🌡️</div>
@@ -370,10 +351,8 @@ export default function Wearther() {
           </div>
         )}
 
-        {/* ── RECOMMENDATION ── */}
         {step === "recommendation" && rec && (
           <div>
-            {/* Weather header */}
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
               marginBottom: "20px", paddingBottom: "18px",
@@ -391,7 +370,6 @@ export default function Wearther() {
               <div style={{ fontSize: "40px" }}>{rec.emoji}</div>
             </div>
 
-            {/* Weather stats */}
             <div style={{ display: "flex", gap: "8px", marginBottom: "22px" }}>
               {[["Wind", `${rec.windMph} mph`], ["Humidity", `${rec.humidity}%`], ["UV", rec.uvIndex]].map(([label, val]) => (
                 <div key={label} style={{
@@ -405,15 +383,11 @@ export default function Wearther() {
               ))}
             </div>
 
-            {/* ── STYLE TOGGLE ── */}
             <div style={{ marginBottom: "22px" }}>
-              <div style={{ color: "#6a9ab8", fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "10px" }}>
-                Style
-              </div>
+              <div style={{ color: "#6a9ab8", fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "10px" }}>Style</div>
               <div style={{ display: "flex", gap: "6px" }}>
                 {STYLES.map(s => (
-                  <button key={s.id} onClick={() => handleStyleChange(s.id)}
-                    disabled={recLoading}
+                  <button key={s.id} onClick={() => handleStyleChange(s.id)} disabled={recLoading}
                     style={{
                       flex: 1, padding: "8px 4px",
                       background: activeStyle === s.id ? "rgba(100,180,255,0.15)" : "rgba(255,255,255,0.03)",
@@ -430,67 +404,45 @@ export default function Wearther() {
               </div>
             </div>
 
-            {/* ── OUTDOOR EXPOSURE SLIDER ── */}
             <div style={{ marginBottom: "22px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "8px" }}>
-                <div style={{ color: "#6a9ab8", fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase" }}>
-                  Time outside today
-                </div>
-                <div style={{ color: "#a8d8f0", fontSize: "12px", fontStyle: "italic" }}>
-                  {EXPOSURE_LABELS[exposureIndex]}
-                </div>
+                <div style={{ color: "#6a9ab8", fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase" }}>Time outside today</div>
+                <div style={{ color: "#a8d8f0", fontSize: "12px", fontStyle: "italic" }}>{EXPOSURE_LABELS[exposureIndex]}</div>
               </div>
-              <div style={{ position: "relative" }}>
-                <input
-                  type="range" min="0" max="4" step="1"
-                  value={exposureIndex}
-                  onChange={e => setExposureIndex(Number(e.target.value))}
-                  onMouseUp={e => handleExposureChange(Number(e.target.value))}
-                  onTouchEnd={e => handleExposureChange(Number(e.target.value))}
-                  disabled={recLoading}
-                  style={{
-                    width: "100%", height: "2px",
-                    appearance: "none", WebkitAppearance: "none",
-                    background: `linear-gradient(to right, rgba(100,180,255,0.6) 0%, rgba(100,180,255,0.6) ${exposureIndex * 25}%, rgba(255,255,255,0.1) ${exposureIndex * 25}%, rgba(255,255,255,0.1) 100%)`,
-                    outline: "none", cursor: recLoading ? "default" : "pointer",
-                    opacity: recLoading ? 0.5 : 1,
-                  }}
-                />
-              </div>
+              <input type="range" min="0" max="4" step="1" value={exposureIndex}
+                onChange={e => setExposureIndex(Number(e.target.value))}
+                onMouseUp={e => handleExposureChange(Number(e.target.value))}
+                onTouchEnd={e => handleExposureChange(Number(e.target.value))}
+                disabled={recLoading}
+                style={{
+                  width: "100%", height: "2px", appearance: "none", WebkitAppearance: "none",
+                  background: `linear-gradient(to right, rgba(100,180,255,0.6) 0%, rgba(100,180,255,0.6) ${exposureIndex * 25}%, rgba(255,255,255,0.1) ${exposureIndex * 25}%, rgba(255,255,255,0.1) 100%)`,
+                  outline: "none", cursor: recLoading ? "default" : "pointer", opacity: recLoading ? 0.5 : 1,
+                }} />
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px" }}>
                 <span style={{ color: "#3a5a6a", fontSize: "10px" }}>Barely outside</span>
                 <span style={{ color: "#3a5a6a", fontSize: "10px" }}>Most of the day</span>
               </div>
-              <div style={{ color: "#3a5a6a", fontSize: "10px", fontStyle: "italic", marginTop: "4px" }}>
-                Excluding exercise or strenuous activity
-              </div>
+              <div style={{ color: "#3a5a6a", fontSize: "10px", fontStyle: "italic", marginTop: "4px" }}>Excluding exercise or strenuous activity</div>
             </div>
 
-            {/* Loading overlay on rec */}
             {recLoading && (
               <div style={{ textAlign: "center", padding: "12px 0", marginBottom: "12px" }}>
-                <span style={{ color: "#6a9ab8", fontSize: "12px", fontStyle: "italic", animation: "pulse 1s ease-in-out infinite" }}>
-                  Updating recommendation…
-                </span>
+                <span style={{ color: "#6a9ab8", fontSize: "12px", fontStyle: "italic", animation: "pulse 1s ease-in-out infinite" }}>Updating recommendation…</span>
               </div>
             )}
 
-            {/* Recommendation content */}
             {!recLoading && (
               <>
                 <div style={{ marginBottom: "18px" }}>
-                  <div style={{ color: "#6a9ab8", fontSize: "10px", letterSpacing: "0.25em", textTransform: "uppercase", marginBottom: "8px" }}>
-                    Today's recommendation
-                  </div>
+                  <div style={{ color: "#6a9ab8", fontSize: "10px", letterSpacing: "0.25em", textTransform: "uppercase", marginBottom: "8px" }}>Today's recommendation</div>
                   <p style={{ color: "#e8f4f8", fontSize: "17px", lineHeight: 1.4, fontWeight: "normal", margin: 0, fontStyle: "italic" }}>
                     "{rec.headline}"
                   </p>
                 </div>
 
                 <div style={{ marginBottom: "18px" }}>
-                  <div style={{ color: "#6a9ab8", fontSize: "10px", letterSpacing: "0.25em", textTransform: "uppercase", marginBottom: "10px" }}>
-                    What to wear
-                  </div>
+                  <div style={{ color: "#6a9ab8", fontSize: "10px", letterSpacing: "0.25em", textTransform: "uppercase", marginBottom: "10px" }}>What to wear</div>
                   {(rec.layers || []).map((layer, i) => (
                     <div key={i} style={{
                       display: "flex", alignItems: "center", gap: "10px", padding: "9px 0",
@@ -519,11 +471,8 @@ export default function Wearther() {
                   </div>
                 )}
 
-                {/* Feedback */}
                 <div style={{ marginTop: "20px", paddingTop: "18px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
-                  <div style={{ color: "#4a6a7a", fontSize: "10px", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "10px", textAlign: "center" }}>
-                    How did it feel?
-                  </div>
+                  <div style={{ color: "#4a6a7a", fontSize: "10px", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "10px", textAlign: "center" }}>How did it feel?</div>
                   <div style={{ display: "flex", gap: "8px" }}>
                     {[["too_cold", "🥶 Too cold"], ["just_right", "✓ Just right"], ["too_hot", "🥵 Too warm"]].map(([val, label]) => (
                       <button key={val} onClick={() => handleFeedback(val)} style={{
@@ -540,7 +489,6 @@ export default function Wearther() {
           </div>
         )}
 
-        {/* ── FEEDBACK ── */}
         {step === "feedback" && (
           <div style={{ textAlign: "center", padding: "20px 0" }}>
             <div style={{ fontSize: "36px", marginBottom: "16px" }}>
@@ -550,9 +498,7 @@ export default function Wearther() {
               {feedback === "just_right" ? "Perfect." : "Got it."}
             </h2>
             <p style={{ color: "#6a9ab8", fontSize: "13px", marginBottom: "8px", fontStyle: "italic" }}>
-              {feedback === "just_right" ? "We'll keep that calibration."
-                : feedback === "too_cold" ? "We'll layer up next time."
-                : "We'll dial it back next time."}
+              {feedback === "just_right" ? "We'll keep that calibration." : feedback === "too_cold" ? "We'll layer up next time." : "We'll dial it back next time."}
             </p>
             <p style={{ color: "#3a5a6a", fontSize: "11px", marginBottom: "24px" }}>
               {feedbackHistory.length} data point{feedbackHistory.length !== 1 ? "s" : ""} collected.
@@ -577,20 +523,15 @@ export default function Wearther() {
         input[type="range"]::-webkit-slider-thumb {
           -webkit-appearance: none; appearance: none;
           width: 16px; height: 16px; border-radius: 50%;
-          background: rgba(100,180,255,0.9);
-          border: 2px solid rgba(100,180,255,0.4);
+          background: rgba(100,180,255,0.9); border: 2px solid rgba(100,180,255,0.4);
           cursor: pointer; margin-top: -7px;
         }
-        input[type="range"]::-webkit-slider-runnable-track {
-          height: 2px; border-radius: 1px;
-        }
+        input[type="range"]::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; }
         input[type="range"]::-moz-range-thumb {
           width: 16px; height: 16px; border-radius: 50%;
-          background: rgba(100,180,255,0.9); border: 2px solid rgba(100,180,255,0.4);
-          cursor: pointer;
+          background: rgba(100,180,255,0.9); border: 2px solid rgba(100,180,255,0.4); cursor: pointer;
         }
       `}</style>
     </div>
   );
 }
-
