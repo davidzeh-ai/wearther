@@ -51,12 +51,12 @@ const WEATHER_EMOJI = {
 async function fetchWeather(locationInput) {
   const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
   const isZip = /^\d{5}$/.test(locationInput.trim());
-  const query = isZip 
-    ? `zip=${locationInput.trim()},US` 
-    : `q=${encodeURIComponent(locationInput)}`;
-  const url = `https://api.openweathermap.org/data/2.5/weather?${query}&appid=${apiKey}&units=imperial`;
+  const query = isZip
+    ? `zip=${locationInput.trim()},US&units=imperial`
+    : `q=${encodeURIComponent(locationInput)}&units=imperial`;
+  const url = `https://api.openweathermap.org/data/2.5/weather?${query}&appid=${apiKey}`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error("Could not find that location in weather database. Try a major nearby city.");
+  if (!res.ok) throw new Error("Could not find that location. Try a city name or zip code.");
   const data = await res.json();
   return {
     tempF: Math.round(data.main.temp),
