@@ -70,7 +70,7 @@ async function fetchWeather(locationInput) {
   };
 }
 
-async function fetchRecommendation({ weather, heatTolerance, style, exposureIndex, feedbackHistory }) {
+async function fetchRecommendation({ weather, heatTolerance, dressStyle, style, exposureIndex, feedbackHistory }) {
   const historyNote = feedbackHistory.length > 0
     ? `Past outfit feedback: ${feedbackHistory.map(h => `felt ${h.feeling} (${h.style} style, exposure: ${EXPOSURE_LABELS[h.exposureIndex]})`).join("; ")}.`
     : "";
@@ -92,7 +92,7 @@ Current weather conditions:
 - Location: ${weather.locationDisplay}
 
 User profile:
-- Temperature tolerance: ${heatTolerance === "cold" ? "runs cold, tends to feel chilly" : heatTolerance === "hot" ? "runs warm, tends to overheat" : "average temperature sensitivity"}
+- Clothing style: ${dressStyle === "menswear" ? "menswear (tailored, structured, traditionally masculine cuts)" : dressStyle === "womenswear" ? "womenswear (dresses, skirts, feminine silhouettes welcome)" : "gender-fluid / mix of both — use inclusive clothing language"}
 - Style register today: ${styleObj.label} (e.g. ${styleObj.example})
 - Time outside today (excluding exercise/strenuous activity): ${exposureLabel}
 ${historyNote}
@@ -131,7 +131,7 @@ Respond ONLY with a raw JSON object. No markdown. No backticks. No explanation. 
 export default function Wearther() {
   const [step, setStep] = useState("profile");
   const [profile, setProfile] = useState({
-    name: "", locationInput: "", heatTolerance: "average",
+   name: "", locationInput: "", heatTolerance: "average", dressStyle: "menswear",
   });
 
   const [activeStyle, setActiveStyle] = useState("casual");
@@ -179,7 +179,7 @@ export default function Wearther() {
       setWeather(weatherData);
       const recData = await fetchRecommendation({
         weather: weatherData,
-        heatTolerance: profile.heatTolerance,
+        heatTolerance: profile.heatTolerance,\n        dressStyle: profile.dressStyle,\n        dressStyle: profile.dressStyle,
         style: activeStyle,
         exposureIndex,
         feedbackHistory,
@@ -198,7 +198,7 @@ export default function Wearther() {
     try {
       const recData = await fetchRecommendation({
         weather,
-        heatTolerance: profile.heatTolerance,
+        heatTolerance: profile.heatTolerance,\n        dressStyle: profile.dressStyle,\n        dressStyle: profile.dressStyle,
         style: newStyle,
         exposureIndex,
         feedbackHistory,
@@ -217,7 +217,7 @@ export default function Wearther() {
     try {
       const recData = await fetchRecommendation({
         weather,
-        heatTolerance: profile.heatTolerance,
+        heatTolerance: profile.heatTolerance,\n        dressStyle: profile.dressStyle,\n        dressStyle: profile.dressStyle,
         style: activeStyle,
         exposureIndex: newIndex,
         feedbackHistory,
@@ -247,7 +247,7 @@ export default function Wearther() {
       setWeather(weatherData);
       const recData = await fetchRecommendation({
         weather: weatherData,
-        heatTolerance: profile.heatTolerance,
+        heatTolerance: profile.heatTolerance,\n        dressStyle: profile.dressStyle,\n        dressStyle: profile.dressStyle,
         style: activeStyle,
         exposureIndex,
         feedbackHistory,
@@ -332,7 +332,25 @@ export default function Wearther() {
                 ))}
               </div>
             </div>
-
+<div style={{ marginBottom: "28px" }}>
+  <label style={labelStyle}>How would you describe your style?</label>
+  <div style={{ display: "flex", gap: "8px" }}>
+    {[
+      ["menswear", "Menswear", "Tailored, structured, traditionally masculine cuts"],
+      ["womenswear", "Womenswear", "Dresses, skirts, feminine silhouettes welcome"],
+      ["mixitup", "Mix it up", "Androgynous, gender-fluid, or just whatever fits"],
+    ].map(([val, label, example]) => (
+      <button key={val} onClick={() => setProfile(p => ({ ...p, dressStyle: val }))}
+        title={example}
+        style={{ ...chipStyle(profile.dressStyle === val), flex: 1, fontSize: "11px" }}>
+        {label}
+      </button>
+    ))}
+  </div>
+  <div style={{ color: "#3a5a6a", fontSize: "11px", fontStyle: "italic", marginTop: "6px" }}>
+    {[["menswear","Tailored, structured, traditionally masculine cuts"],["womenswear","Dresses, skirts, feminine silhouettes welcome"],["mixitup","Androgynous, gender-fluid, or just whatever fits"]].find(([v]) => v === profile.dressStyle)?.[1]}
+  </div>
+</div>
             <button onClick={handleSubmit} disabled={!canSubmit} style={{
               width: "100%", padding: "14px",
               background: canSubmit ? "rgba(100,180,255,0.15)" : "rgba(255,255,255,0.04)",
