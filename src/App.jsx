@@ -251,7 +251,7 @@ export default function Wearther() {
       const recData = await fetchRecommendation({
         weather: weatherData,
         heatTolerance: profile.heatTolerance,
-        dressStyle: profile.dressStyle,,
+        dressStyle: profile.dressStyle,
         style: activeStyle,
         exposureIndex,
         feedbackHistory,
