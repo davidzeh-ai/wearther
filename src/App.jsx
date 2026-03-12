@@ -85,23 +85,29 @@ async function fetchRecommendation({ weather, heatTolerance, dressStyle, style, 
   const prompt = `Today is ${today}.
 
 Current weather conditions:
+- Location: ${weather.locationDisplay}
 - Temperature: ${weather.tempF}°F (feels like ${weather.feelsLikeF}°F)
 - Conditions: ${weather.conditions}
 - Wind: ${weather.windMph} mph
 - Humidity: ${weather.humidity}%
-- Location: ${weather.locationDisplay}
 
 User profile:
+- Temperature tolerance: ${heatTolerance === "cold" ? "runs cold, tends to feel chilly" : heatTolerance === "hot" ? "runs warm, tends to overheat" : "average temperature sensitivity"}
 - Clothing style: ${dressStyle === "menswear" ? "menswear (tailored, structured, traditionally masculine cuts)" : dressStyle === "womenswear" ? "womenswear (dresses, skirts, feminine silhouettes welcome)" : "gender-fluid / mix of both — use inclusive clothing language"}
 - Style register today: ${styleObj.label} (e.g. ${styleObj.example})
-- Time outside today (excluding exercise/strenuous activity): ${exposureLabel}
+- Time outside today (excluding exercise): ${exposureLabel}
 ${historyNote}
 
-The outdoor exposure time should significantly affect layering and practicality advice. Someone barely outside needs comfort; someone outside most of the day needs durability and weather protection.
+IMPORTANT GUIDANCE:
+- Let the actual temperature drive garment category choices. Below 50°F: pants, closed shoes, real outerwear. 50–65°F: transition zone, light jacket, could go either way on pants vs shorts depending on tolerance. 65–75°F: shorts and short sleeves are appropriate. Above 75°F: shorts, breathable fabrics, sandals are all on the table. Do not default to pants and sneakers in warm weather.
+- Humidity above 70% in warm weather means prioritize breathable, moisture-wicking fabrics. Linen, cotton, and loose fits matter.
+- High UV (or clear sky in summer) means sun protection is relevant advice.
+- The exposure slider matters: someone barely outside just needs to look good stepping in and out. Someone outside most of the day needs functional, weather-appropriate choices they can actually sustain.
+- Tailor vocabulary to the dress style. Menswear: chinos, oxfords, loafers, blazers. Womenswear: sundresses, sandals, skirts, blouses. Mix it up: inclusive, non-gendered language.
+- Be specific. Name actual garments, not just categories. "A linen button-down in a light color" beats "a breathable top."
 
 Respond ONLY with a raw JSON object. No markdown. No backticks. No explanation. Just valid JSON:
 {"headline":"A sharp layered look that handles the cold without bulk","layers":["Thermal base layer under a fitted crewneck","Dark slim chinos","Structured wool overcoat"],"keyAdvice":"Wind makes it feel 5 degrees colder than it is — the coat earns its place today.","watchOut":"Rain possible after 3pm — consider a coat with some water resistance."}`;
-
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
