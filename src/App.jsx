@@ -179,7 +179,8 @@ export default function Wearther() {
       setWeather(weatherData);
       const recData = await fetchRecommendation({
         weather: weatherData,
-        heatTolerance: profile.heatTolerance,\n        dressStyle: profile.dressStyle,\n        dressStyle: profile.dressStyle,
+        heatTolerance: profile.heatTolerance,
+        dressStyle: profile.dressStyle,
         style: activeStyle,
         exposureIndex,
         feedbackHistory,
@@ -198,7 +199,8 @@ export default function Wearther() {
     try {
       const recData = await fetchRecommendation({
         weather,
-        heatTolerance: profile.heatTolerance,\n        dressStyle: profile.dressStyle,\n        dressStyle: profile.dressStyle,
+        heatTolerance: profile.heatTolerance,
+        dressStyle: profile.dressStyle,
         style: newStyle,
         exposureIndex,
         feedbackHistory,
@@ -217,7 +219,8 @@ export default function Wearther() {
     try {
       const recData = await fetchRecommendation({
         weather,
-        heatTolerance: profile.heatTolerance,\n        dressStyle: profile.dressStyle,\n        dressStyle: profile.dressStyle,
+       heatTolerance: profile.heatTolerance,
+        dressStyle: profile.dressStyle,
         style: activeStyle,
         exposureIndex: newIndex,
         feedbackHistory,
@@ -247,7 +250,8 @@ export default function Wearther() {
       setWeather(weatherData);
       const recData = await fetchRecommendation({
         weather: weatherData,
-        heatTolerance: profile.heatTolerance,\n        dressStyle: profile.dressStyle,\n        dressStyle: profile.dressStyle,
+        heatTolerance: profile.heatTolerance,
+        dressStyle: profile.dressStyle,,
         style: activeStyle,
         exposureIndex,
         feedbackHistory,
